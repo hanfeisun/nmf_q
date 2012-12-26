@@ -3,7 +3,7 @@ import subprocess
 import os
 import sys
 
-class NMF_Base(self):
+class NMF_Base(object):
     # global variable for all inherit
     def __init__(self):
         self.files = []
@@ -66,8 +66,8 @@ class Beds(NMF_Base):
             for interval in open(temp_file):
                 interval = interval.strip().split()
                 mask_name = interval[0]
-                self.mask_matrix[mask.idx_dict[mask_name],bed_idx] = 1
-        return self.mask_matrix
+                self.masked_matrix[mask.idx_dict[mask_name],bed_idx] = 1
+        return self.masked_matrix
 
 class Mask(NMF_Base):
     def __init(self, mask_path, mask_format=""):
