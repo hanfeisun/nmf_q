@@ -3,15 +3,15 @@ import nimfa
 from .io import *
 
 class NMF_Run(object):
-    def __init__(self, beds, mask):
-        NMF_Base.__init__(self)
-        self.beds = Beds(beds)
-        self.mask = Mask(mask)
+    def __init__(self, beds_table, mask_path):
+        self.beds = Beds(beds_table)
+        self.mask = Mask(mask_path)
     def run(self):
+        # TODO: estimate rank
         masked_matrix = self.beds.mask_by(self.mask)
         self.fctr = nimfa.mf(masked_matrix,
                              seed            = "nndsvd",
-                             rank            = 10, # TODO
+                             rank            = 10,
                              method          = bmf,
                              max_iter        = 50,
                              initialize_only = True,
