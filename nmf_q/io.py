@@ -2,7 +2,7 @@ import numpy
 import subprocess
 import os
 import sys
-
+import cPickle
 class NMF_Base(object):
     # global variable for all inherit
     def __init__(self, verbose=False):
@@ -11,36 +11,40 @@ class NMF_Base(object):
         self.temp_file_counter = 0
         self.verbose = verbose
 
-    def create_temp_file(self, description):
-        temp_file = "NMF_%s_%d_%d_%s" % (self.__class__.__name__,
-                                         os.getpid(),
-                                         self.temp_file_counter,
-                                         description)
-        # Test whether the path is writable
-        if not os.path.exists(temp_file):
-            open(temp_file,'w').close()
-            print "creating",temp_file
+    @staticmethod
+    def try_touch(file_path):
+        if not os.path.exists(file_path):
+            open(file_path,'w').close()
+            print "creating",file_path
         else:
-            print "file already exists, exit"
-            sys.exit(1)
-        self.temp_files.append(temp_file)
-        self.temp_file_counter += 1
-        return temp_file
-
+            print "file already exists, skip" , file_path
+            raise
 
     def create_persist_file(self, description):
-        persist
-        temp_file = "NMF_%s_%d_%d_%s" % (self.__class__.__name__,
-                                         os.getpid(),
-                                         self.temp_file_counter,
-                                         description)
+        if not os.path.exists(self.temp_dir):
+            os.mkdir(self.temp_dir)
+        persist_file = os.path.join(self.temp_dir,
+                                    "p_NMF_%s_%d__%s" % (self.__class__.__name__,
+                                                         os.getpid(),
+                                                         description))
+        NMF_Base.try_touch(persist_file)
+        return persist_file
+
+    @property
+    def temp_dir(self):
+        return "NMF_%d" % os.getpid()
+
+
+    def create_temp_file(self, description):
+        if not os.path.exists(self.temp_dir):
+            os.mkdir(self.temp_dir)
+        temp_file = os.path.join(self.temp_dir,
+                                 "NMF_%s_%d_%d_%s" % (self.__class__.__name__,
+                                                      os.getpid(),
+                                                      self.temp_file_counter,
+                                                      description))
         # Test whether the path is writable
-        if not os.path.exists(temp_file):
-            open(temp_file,'w').close()
-            print "creating",temp_file
-        else:
-            print "file already exists, exit"
-            sys.exit(1)
+        self.try_touch(temp_file)
         self.temp_files.append(temp_file)
         self.temp_file_counter += 1
         return temp_file
@@ -49,8 +53,12 @@ class NMF_Base(object):
         for a_file in self.temp_files:
             if self.verbose:
                 print "deleting",a_file
-            os.remove(a_file)
-            self.temp_file_counter -= 1
+            try:
+                os.remove(a_file)
+                self.temp_file_counter -= 1
+                del self.temp_files[self.temp_files.index(a_file)]
+            except OSError:
+                pass
         print "delete all temp files successfully"
     @staticmethod
     def run_cmd (command):
@@ -72,7 +80,7 @@ class Bed(NMF_Base):
         self.name = name
         self.description = description
     def mask_by(self, mask):
-        self.masked_result = self.create_temp_file(self.name)
+        self.masked_result = self.create_temp_file(self.description)
         self.mask = mask
         NMF_Base.run_cmd("intersectBed -b %s -a %s -wa > %s"
                          % (self.path, self.mask.path, self.masked_result))
@@ -100,7 +108,7 @@ class BedSet(NMF_Base):
 
             bed = Bed(description = line[0],
                       name        =  line[1],
-                      path        = self.expand_path(line[2]))
+                      path        =  self.expand_path(line[2]))
 
             if os.path.isfile(bed.path):
                 self.beds.append(bed)
@@ -125,11 +133,11 @@ class BedSet(NMF_Base):
         return self.masked_matrix
 
     @property
-    def masked_matrix_colnames(self, key="name"):
-        return [i[key] for i in self.beds]
+    def mm_colnames(self, key="name"):
+        return [i.description for i in self.beds]
 
     @property
-    def masked_matrix_rownames(self):
+    def mm_rownames(self):
         return self.mask.mask_name_list
 
 class Mask(NMF_Base):
@@ -141,7 +149,7 @@ class Mask(NMF_Base):
         self.path = mask_path
         for idx, i in enumerate(open(mask_path)):
             mask_name = i.strip().split()[3]
-            self.mask_name_list.append(self.mask_name_list)
+            self.mask_name_list.append(i.strip())
             self.idx_dict[mask_name] = idx
 
     @property
