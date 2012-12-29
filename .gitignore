@@ -1,3 +1,4 @@
 data
 *.pyc
-NMF_Beds*
+NMF_BedSet*
+NMF_*

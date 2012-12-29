@@ -27,6 +27,24 @@ class NMF_Base(object):
         self.temp_file_counter += 1
         return temp_file
 
+
+    def create_persist_file(self, description):
+        persist
+        temp_file = "NMF_%s_%d_%d_%s" % (self.__class__.__name__,
+                                         os.getpid(),
+                                         self.temp_file_counter,
+                                         description)
+        # Test whether the path is writable
+        if not os.path.exists(temp_file):
+            open(temp_file,'w').close()
+            print "creating",temp_file
+        else:
+            print "file already exists, exit"
+            sys.exit(1)
+        self.temp_files.append(temp_file)
+        self.temp_file_counter += 1
+        return temp_file
+
     def delete_temp_files(self):
         for a_file in self.temp_files:
             if self.verbose:
@@ -38,7 +56,7 @@ class NMF_Base(object):
     def run_cmd (command):
         print "Run: %s" % command
         subprocess.call(command,shell=True)
-
+    @staticmethod
     def count_lines(a_file):
         count = -1
         for count, line in enumerate(open(a_file)):
@@ -47,7 +65,30 @@ class NMF_Base(object):
     def expand_path(self,path):
         return os.path.expanduser(path)
 
-class Beds(NMF_Base):
+class Bed(NMF_Base):
+    def __init__(self, path, name, description=""):
+        NMF_Base.__init__(self,verbose=True)
+        self.path = path
+        self.name = name
+        self.description = description
+    def mask_by(self, mask):
+        self.masked_result = self.create_temp_file(self.name)
+        self.mask = mask
+        NMF_Base.run_cmd("intersectBed -b %s -a %s -wa > %s"
+                         % (self.path, self.mask.path, self.masked_result))
+        return self.masked_result
+    def to_masked_array(self):
+        self.masked_matrix = numpy.zeros((self.mask.length))
+        for interval in open(self.masked_result):
+            interval = interval.strip().split()
+            mask_name = interval[3]
+            self.masked_matrix[self.mask.idx_dict[mask_name]] = 1.0
+        return self.masked_matrix
+    def clean(self):
+        self.delete_temp_files()
+
+
+class BedSet(NMF_Base):
     def __init__(self, beds_table):
         NMF_Base.__init__(self)
         self.beds = []
@@ -57,15 +98,15 @@ class Beds(NMF_Base):
             line = line.strip().split()
             if not line: continue
 
-            bed = {"desc": line[0],
-                   "name": line[1],
-                   "path": self.expand_path(line[2])}
+            bed = Bed(description = line[0],
+                      name        =  line[1],
+                      path        = self.expand_path(line[2]))
 
-            if os.path.isfile(bed["path"]):
+            if os.path.isfile(bed.path):
                 self.beds.append(bed)
             else:
                 self.missed_beds.append(bed)
-                print "{name} | {path} not found. Skipped".format(**bed)
+                print "{bed.name} | {bed.path} not found. Skipped".format(bed=bed)
     @property
     def length(self):
         return len(self.beds)
@@ -74,10 +115,8 @@ class Beds(NMF_Base):
         self.masked_matrix = numpy.zeros((mask.length, self.length))
         self.mask = mask
         for bed_idx,bed in enumerate(self.beds):
-            print "init", bed["name"], "bed file", bed["path"]
-            temp_file = self.create_temp_file(bed["name"])
-            NMF_Base.run_cmd("intersectBed -b %s -a %s -wa > %s"
-                             % (bed["path"], self.mask.path, temp_file))
+            print "init", bed.name, "bed file", bed.path
+            temp_file = bed.mask_by(mask)
             for interval in open(temp_file):
                 interval = interval.strip().split()
                 mask_name = interval[3]
@@ -96,7 +135,6 @@ class Beds(NMF_Base):
 class Mask(NMF_Base):
     def __init__(self, mask_path, mask_format=""):
         # Future: implement mask_format
-
         NMF_Base.__init__(self)
         self.idx_dict = {}
         self.mask_name_list = []
@@ -109,3 +147,47 @@ class Mask(NMF_Base):
     @property
     def length(self):
         return len(self.idx_dict)
+
+
+class Basis(NMF_Base):
+    def __init__(self, base_path):
+        # Future: implement mask_format
+        NMF_Base.__init__(self)
+        self.base_path = base_path
+        self.feature_cnt = len(open(base_path).readline().strip().split("\t")) - 4
+        # First 4 columns are not features
+        self.site_cnt = NMF_Base.count_lines(base_path) - 1
+
+    def load(self):
+        with open(self.base_path) as bf:
+            self.features = bf.readline().strip().split("\t")[4:]
+            self.narray = numpy.zeros((self.site_cnt, self.feature_cnt))
+            self.sites = []
+            for idx,i in enumerate(bf):
+                if idx % 100000 == 0:
+                    print "loading basis matrix: progress %d/%d" %(idx, self.site_cnt)
+                i = i.strip().split()
+                if i:
+                    self.sites.append(i[:4])
+                    self.narray[idx,:] = map(float,i[4:])
+        return self.narray
+
+
+class Coef(NMF_Base):
+    def __init__(self, coef_path):
+        NMF_Base.__init__(self)
+        self.coef_path = coef_path
+        self.feature_cnt = NMF_Base.count_lines(coef_path) - 1
+        self.dataset_cnt = len(open(coef_path).readline().strip().split())
+    def load(self):
+        print "loading coef matrix.."
+        with open(self.coef_path) as cf:
+            self.datasets = cf.readline().strip().split()
+            self.features = []
+            self.narray = numpy.zeros((self.feature_cnt, self.dataset_cnt))
+            for idx,i in enumerate(cf):
+                i = i.strip().split()
+                if i:
+                    self.features.append(i[0])
+                    self.narray[idx,:] = map(float,i[1:])
+        return self.narray
