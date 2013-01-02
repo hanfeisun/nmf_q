@@ -1,8 +1,6 @@
 import numpy
 import subprocess
 import os
-import sys
-import cPickle
 class NMF_Base(object):
     # global variable for all inherit
     def __init__(self, verbose=False):
