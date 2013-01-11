@@ -2,3 +2,6 @@ data
 *.pyc
 NMF_BedSet*
 NMF_*
+build
+dist
+nmf_q.egg-info
